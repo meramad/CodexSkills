@@ -1,4 +1,4 @@
-﻿---
+---
 name: broker-powershell
 description: Use PersistentPowerShellBroker for all PowerShell and Excel automation via named pipe; prefer Invoke-PSBroker.ps1 and only fall back when broker is unavailable.
 ---
