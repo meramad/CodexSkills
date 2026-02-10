@@ -52,14 +52,15 @@ Keep it in a session variable and reuse it.
    - `. $helper`
 2. Probe broker:
    - `Invoke-PSBroker -PipeName $pipe -Command 'broker.info' -PassThru`
-3. If probe fails, start broker:
-   - `$brokerProc = Start-Process -FilePath $brokerExe -ArgumentList @('--pipe', $pipe, '--log-option', 'silent') -PassThru`
-   - `$brokerStartedBySession = $true`
+3. If probe fails, start broker (detached, correct working dir):
+   - $brokerProc = Start-Process -FilePath $brokerExe -WorkingDirectory $brokerRoot -ArgumentList @('--pipe', $pipe, '--log-option', 'silent') -PassThru
+   - $brokerStartedBySession = $true
+   - Immediately tell the user you started the broker, and the chosen pipe name.
 4. Poll `broker.info` with fixed policy:
    - total timeout: `30s`
    - retry interval: `500ms`
    - stop polling on first successful response
-   - if timeout reached, treat as broker unavailable
+   - If polling times out, the agent must surface: brokerExe, pipe, and whether the process is still running ($brokerProc.HasExited) before falling back.
 
 If broker still cannot start/connect:
 - Explicitly tell the user you are falling back to direct PowerShell and why.
