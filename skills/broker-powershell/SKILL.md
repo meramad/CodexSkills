@@ -37,6 +37,11 @@ If `%PERSISTENTPSBROKER%` is missing or invalid:
 - Stop and tell the user exactly what is missing.
 - Ask for the correct broker folder.
 
+## Working Directory and Path Assumptions
+- Do not assume the broker is in the current working directory.
+- Always resolve broker paths from `%PERSISTENTPSBROKER%` and use `$brokerRoot` as the working directory when starting the broker.
+- Always dot-source the helper using its full path from `$brokerRoot` (never `./Invoke-PSBroker.ps1`).
+
 ## Session Pipe Policy
 Choose one pipe key per session, for example `psbroker-<random8>`.
 
@@ -55,7 +60,7 @@ Keep it in a session variable and reuse it.
    - `Invoke-PSBroker -PipeName $pipe -Command 'broker.info' -PassThru`
 
 3. If probe fails, start broker **once** (detached) and remember you started it:
-   - `$brokerProc = Start-Process -FilePath $brokerExe -WorkingDirectory $brokerRoot -ArgumentList @('--pipe', $pipe, '--log-option', 'info') -PassThru`
+   - `$brokerProc = Start-Process -FilePath $brokerExe -WorkingDirectory $brokerRoot -ArgumentList @('--pipe', $pipe, '--log-option', 'silent') -PassThru`
    - `$brokerStartedBySession = $true`
    - Tell the user: “Started broker (silent) on pipe <pipe>.”
 
@@ -83,6 +88,7 @@ Always prefer helper calls (use `-PassThru` so failures return structured result
 
 ## Excel Policy
 - Always try broker-native Excel commands (`broker.excel.*`) first.
+- When calling `broker.excel.get_workbook_handle`, always pass an **absolute local file path** (never relative paths).
 - If broker-native Excel fails or Excel is unavailable:
   - Tell the user exactly why.
   - Then fall back to non-broker Excel automation only if necessary.
