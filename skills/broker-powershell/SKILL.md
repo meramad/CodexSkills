@@ -18,10 +18,15 @@ This skill is mandatory when broker support exists. Do not invent alternate dire
 - Do reuse the same pipe consistently in later commands.
 - Do check broker availability with `broker.info` before running work.
 - Do use broker-native Excel commands (`broker.excel.*`) before any non-broker Excel automation.
+- Do open Excel workbooks in visible mode for interactive work; avoid headless Excel automation.
 - Do not switch to direct PowerShell silently.
 - Do not switch to non-broker Excel silently.
 - Do not create alternative TCP/HTTP command channels.
 - Do not iterate through different broker start commands/flags. Use exactly the start command in this skill.
+
+Operational clarification:
+- If a chosen pipe becomes unresponsive (hang/timeouts), declare that broker session failed, tell the user, and start a new broker session with a new pipe name.
+- This is not considered pipe thrashing; it is failure recovery.
 
 ## Environment and Discovery
 Broker folder is provided by environment variable `%PERSISTENTPSBROKER%`.
@@ -51,6 +56,12 @@ Immediately tell the user:
 
 Keep it in a session variable and reuse it.
 
+Failure recovery:
+- When a pipe fails, explicitly announce:
+  - old pipe name,
+  - failure symptom (timeout/hang/no response),
+  - new pipe name for the recovery session.
+
 ## Start Broker If Not Running (robust, no iteration)
 
 1. Dot-source the helper:
@@ -60,7 +71,7 @@ Keep it in a session variable and reuse it.
    - `Invoke-PSBroker -PipeName $pipe -Command 'broker.info' -PassThru`
 
 3. If probe fails, start broker **once** (detached) and remember you started it:
-   - `$brokerProc = Start-Process -FilePath $brokerExe -WorkingDirectory $brokerRoot -ArgumentList @('--pipe', $pipe, '--log-option', 'silent') -PassThru`
+   - `$brokerProc = Start-Process -FilePath $brokerExe -WorkingDirectory $brokerRoot -ArgumentList @('--pipe', $pipe) -PassThru`
    - `$brokerStartedBySession = $true`
    - Tell the user: “Started broker (silent) on pipe <pipe>.”
 
@@ -86,12 +97,45 @@ Always prefer helper calls (use `-PassThru` so failures return structured result
 - Free-form PowerShell:
   - `Invoke-PSBroker -PipeName $pipe -Script 'Get-Date' -PassThru`
 
+Scope clarification:
+- For model/excel operations, run PowerShell logic in broker runspace via `Invoke-PSBroker -Script`.
+- Local shell PowerShell is allowed for broker bootstrap/discovery, process diagnostics, and non-model file edits.
+
 ## Excel Policy
 - Always try broker-native Excel commands (`broker.excel.*`) first.
 - When calling `broker.excel.get_workbook_handle`, always pass an **absolute local file path** (never relative paths).
+- When calling `broker.excel.get_workbook_handle`, always pass `forceVisible = $true` unless the user explicitly asks for hidden/background behavior.
+- After opening/attaching a workbook handle, always verify visibility in broker runspace:
+  - `$app = $handle.Workbook.Application`
+  - `$win = $handle.Workbook.Windows.Item(1)`
+  - confirm `$app.Visible -eq $true` and `$win.Visible -eq $true`
+- If visibility check fails, immediately force visibility via handle before continuing:
+  - set `$app.Visible = $true`
+  - set `$app.UserControl = $true`
+  - set `$win.Visible = $true`
+  - activate workbook/window
+- If workbook still cannot be made visible, stop and report the exact reason to the user before continuing with more files.
+- Rationale: Excel COM automation is unreliable in fully headless/background mode; visible interactive mode is the default expectation.
 - If broker-native Excel fails or Excel is unavailable:
   - Tell the user exactly why.
   - Then fall back to non-broker Excel automation only if necessary.
+
+Handle lifecycle policy:
+- Prefer short-lived deterministic handle usage:
+  1. `get_workbook_handle`
+  2. perform one logical batch
+  3. verify expected result
+  4. save/close/release handle when done
+- If a `psVariableName` release fails, treat handle as stale; reacquire by workbook path before retrying close/release.
+
+Refresh reliability playbook:
+- After `RefreshAll`, do not tight-loop COM status checks.
+- Use delayed sparse polling:
+  - initial wait 20-30s,
+  - poll every 10-15s,
+  - typically 3-4 polls.
+- If still refreshing, report exact connection names (`Workbook.Connections`) as stuck.
+- If refresh request causes broker call timeout/hang, stop current session and recover on a new pipe.
 
 ## Raw JSON Pipe Fallback (Only If Helper Unavailable)
 One request per connection, one JSON line response, UTF-8.
